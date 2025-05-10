@@ -1,14 +1,19 @@
 pipeline {
     agent any
 
+    parameters {
+        // Parámetro para seleccionar la rama a clonar, por defecto es 'develop'
+        string(name: 'BRANCH', defaultValue: 'develop')
+    }
+
     stages {
         stage('Get Code') {
             steps {
-                echo 'Me voy a traer el codigo'
-                // Obtener código del repo
-                git 'https://github.com/DaniDiLara/helloworld.git'
+                echo 'Me voy a traer el código desde la rama seleccionada'
+                // Obtener el código del repo con la rama seleccionada
+                git branch: "${params.BRANCH}", url: 'https://github.com/DaniDiLara/helloworld.git'
                 bat 'dir'
-                echo WORKSPACE
+                echo "Workspace: ${WORKSPACE}"
             }
         }
 
@@ -28,7 +33,7 @@ pipeline {
                         '''
                     }
                 }
-                
+
                 stage('Rest') {
                     steps {
                         catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
@@ -42,11 +47,11 @@ pipeline {
                             '''
                         }
                     }
-                }    
+                }
             }
         }
-        
-        stage ('Results') {
+
+        stage('Results') {
             steps {
                 junit 'result*.xml'
             }
