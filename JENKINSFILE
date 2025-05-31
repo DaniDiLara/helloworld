@@ -1,54 +1,112 @@
 pipeline {
-    agent any
+    agent none
 
     stages {
         stage('Get Code') {
+            agent { label 'windows' }
             steps {
+                bat 'whoami && hostname && echo %WORKSPACE%'
                 echo 'Me voy a traer el codigo'
                 // Obtener código del repo
                 git 'https://github.com/DaniDiLara/helloworld.git'
                 bat 'dir'
                 echo WORKSPACE
-            }
-        }
-
-        stage('Build') {
-            steps {
-                echo 'NO HAY QUE COMPILAR NADA. ESTO ES PYTHON'
+                stash name: 'fuente', includes: '**'
             }
         }
 
         stage('Tests') {
             parallel {
                 stage('Unit') {
+                    agent { label 'python' }
                     steps {
+                        bat 'whoami && hostname && echo %WORKSPACE%'
+                        unstash 'fuente'
                         bat '''
                             set PYTHONPATH=%WORKSPACE%
                             pytest --junitxml=result-unit.xml test\\unit
                         '''
+                        junit 'result-unit.xml'
                     }
                 }
-                
+
                 stage('Rest') {
+                    agent { label 'java' }
                     steps {
+                        bat 'whoami && hostname && echo $WORKSPACE'
                         catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                            bat '''
-                                set FLASK_APP=app\\api.py
-                                set FLASK_ENV=development
-                                start flask run
-                                start java -jar C:\\Users\\DaniL\\OneDrive\\Escritorio\\Curso\\Repositorios\\helloworld\\test\\wiremock\\wiremock-jre8-standalone-2.28.0.jar --port 9090 --root-dir C:\\Users\\DaniL\\OneDrive\\Escritorio\\Curso\\Repositorios\\helloworld\\test\\wiremock
-                                set PYTHONPATH=%WORKSPACE%
-                                pytest --junitxml=result-rest.xml test\\rest
-                            '''
+                        unstash 'fuente'
+                        bat '''
+                            set FLASK_APP=app\\api.py
+                            set FLASK_ENV=development
+                            start flask run
+                            start java -jar C:\\Users\\DaniL\\OneDrive\\Escritorio\\Curso\\Repositorios\\helloworld\\test\\wiremock\\wiremock-jre8-standalone-2.28.0.jar --port 9090 --root-dir C:\\Users\\DaniL\\OneDrive\\Escritorio\\Curso\\Repositorios\\helloworld\\test\\wiremock
+                            set PYTHONPATH=%WORKSPACE%
+                            pytest --junitxml=result-rest.xml test\\rest
+                        '''
+                        junit 'result-rest.xml'
                         }
                     }
-                }    
+                }
             }
         }
-        
-        stage ('Results') {
+
+        stage('Static') {
+            agent { label 'python' }
             steps {
-                junit 'result*.xml'
+                unstash 'fuente'
+                bat '''
+                    flake8 app > flake8-result.txt || exit 0
+                '''
+                recordIssues tools: [flake8()]
+            }
+        }
+
+        stage('Security Test') {
+            agent { label 'python' }
+            steps {
+                unstash 'fuente'
+                bat '''
+                    bandit -r app -f txt -o bandit-result.txt || exit 0
+                    type bandit-result.txt
+                '''
+            }
+        }
+
+        stage('Coverage') {
+            agent { label 'python' }
+            steps {
+                unstash 'fuente'
+                bat '''
+                    set PYTHONPATH=.
+                    coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
+                    coverage xml
+                '''
+                recordCoverage(
+                    tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']],
+                    sourceCodeRetention: 'EVERY_BUILD',
+                    failOnError: false,
+                    qualityGates: [
+                        [threshold: 90.0, metric: 'LINE', baseline: 'PROJECT'],
+                        [threshold: 80.0, metric: 'BRANCH', baseline: 'PROJECT']
+                    ]
+                )
+            }
+        }
+
+        stage('Performance') {
+            agent { label 'java' }
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                unstash 'fuente'
+                bat '''
+                    call  "C:\\Users\\DaniL\\OneDrive\\Escritorio\\Curso\\Programas\\apache-jmeter-5.6.3\\apache-jmeter-5.6.3\\bin\\jmeter.bat" -n -t "C:\\Users\\DaniL\\OneDrive\\Escritorio\\Curso\\test-plan.jmx" -l test\\results.jtl
+                '''
+                step([
+                    $class: 'PerformancePublisher',
+                    sourceDataFiles: 'test/results.jtl'
+                    ])
+                }
             }
         }
     }
