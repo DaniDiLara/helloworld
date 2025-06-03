@@ -58,7 +58,11 @@ pipeline {
                 bat '''
                     flake8 app > flake8-result.txt || exit 0
                 '''
-                recordIssues tools: [flake8()]
+                recordIssues tools: [flake8()],
+                    qualityGates: [
+                            [threshold: 8, type: 'TOTAL', unstable: true],
+                            [threshold: 10, type: 'TOTAL', failure: true]
+                    ]
             }
         }
 
@@ -66,10 +70,11 @@ pipeline {
             agent { label 'python' }
             steps {
                 unstash 'fuente'
-                bat '''
-                    bandit -r app -f txt -o bandit-result.txt || exit 0
-                    type bandit-result.txt
-                '''
+                 bat 'bandit -r app -f xml -o bandit.out || exit 0'
+                     recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')], qualityGates: [
+                        [threshold: 2, type: 'TOTAL', unstable: true],
+                        [threshold: 4, type: 'TOTAL', unstable: false]
+                     ]
             }
         }
 
@@ -80,6 +85,7 @@ pipeline {
                 bat '''
                     set PYTHONPATH=.
                     coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
+                    coverage report -m
                     coverage xml
                 '''
                 recordCoverage(
@@ -87,8 +93,8 @@ pipeline {
                     sourceCodeRetention: 'EVERY_BUILD',
                     failOnError: false,
                     qualityGates: [
-                        [threshold: 90.0, metric: 'LINE', baseline: 'PROJECT'],
-                        [threshold: 80.0, metric: 'BRANCH', baseline: 'PROJECT']
+                [metric: 'LINE', unstableThreshold: 85.0, failureThreshold: 85.0, threshold: 95.0],
+                [metric: 'BRANCH', unstableThreshold: 80.0, failureThreshold: 80.0, threshold: 90.0]
                     ]
                 )
             }
@@ -100,6 +106,10 @@ pipeline {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                 unstash 'fuente'
                 bat '''
+                    SET FLASK_APP=app\\api.py
+                    SET FLASK_ENV=development
+                    start "" /B flask run
+                    ping 192.168.1.1 -n 3 >nul
                     call  "C:\\Users\\DaniL\\OneDrive\\Escritorio\\Curso\\Programas\\apache-jmeter-5.6.3\\apache-jmeter-5.6.3\\bin\\jmeter.bat" -n -t "C:\\Users\\DaniL\\OneDrive\\Escritorio\\Curso\\test-plan.jmx" -l test\\results.jtl
                 '''
                 step([
