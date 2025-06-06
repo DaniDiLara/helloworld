@@ -54,6 +54,7 @@ pipeline {
         stage('Static') {
             agent { label 'python' }
             steps {
+                bat 'whoami && hostname && echo %WORKSPACE%'
                 unstash 'fuente'
                 bat '''
                     flake8 app > flake8-result.txt || exit 0
@@ -71,6 +72,7 @@ pipeline {
         stage('Security Test') {
             agent { label 'python' }
             steps {
+                bat 'whoami && hostname && echo %WORKSPACE%'
                 catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                     bat '''
                         bandit -r . -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id}] {msg}" || exit 0
@@ -89,6 +91,7 @@ pipeline {
         stage('Coverage') {
             agent { label 'python' }
             steps {
+                bat 'whoami && hostname && echo %WORKSPACE%'
                 unstash 'fuente'
                 bat '''
                     set PYTHONPATH=.
@@ -111,6 +114,7 @@ pipeline {
         stage('Performance') {
             agent { label 'java' }
             steps {
+                bat 'whoami && hostname && echo %WORKSPACE%'
                 catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                     unstash 'fuente'
                     bat '''
